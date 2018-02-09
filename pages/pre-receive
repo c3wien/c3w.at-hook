@@ -1,0 +1,50 @@
+#!/bin/sh
+
+unit_tmp="/home/build/workspace/unit_tmp"
+while read oldrev newrev refname
+do
+    echo "**************************************************"
+    echo "create unit test context"
+    echo "**************************************************"
+    mkdir $unit_tmp/$newrev
+
+    echo "**************************************************"
+    echo "Preparing to run tests for $newrev ... "
+    echo "**************************************************"
+    git archive $newrev | tar -x -f - -C $unit_tmp/$newrev
+    
+    echo "**************************************************"
+    echo "grep https://c3w.at ."
+    echo "**************************************************"
+    cd $unit_tmp/$newrev
+    grep -iR https://c3w.at .
+
+    if [ ! $? -eq 1 ]; then
+        cd ~/workspace && rm -rf "$unit_tmp/$newrev"
+        echo "**************************************************"
+        echo "push denied"
+        echo "**************************************************"
+        exit 1
+    fi
+
+    echo "**************************************************"
+    echo "grep http://c3w.at ."
+    echo "**************************************************"
+    cd $unit_tmp/$newrev
+    grep -iR http://c3w.at .
+
+    if [ ! $? -eq 1 ]; then
+        cd ~/workspace && rm -rf "$unit_tmp/$newrev"
+        echo "**************************************************"
+        echo "push denied"
+        echo "**************************************************"
+        exit 1
+    fi
+
+    cd ~/workspace && rm -rf "$unit_tmp/$newrev"
+done
+
+echo "**************************************************"
+echo "unit test done!"
+echo "**************************************************"
+exit 0

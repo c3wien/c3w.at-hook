@@ -1,0 +1,112 @@
+#!/bin/sh
+
+while read oldrev newrev refname
+do
+    BRANCH=$(git rev-parse --symbolic --abbrev-ref $refname)
+    if [ "master" == "$BRANCH" ];
+    then
+        SITE="prod"
+        BRANCH="master"
+        NIKOLA="nikola_build"
+        break
+    else
+        if [ "dev" == "$BRANCH" ];
+        then
+            SITE="dev"
+            BRANCH="dev"
+            NIKOLA="nikola_build_dev"
+            break
+        else
+            echo "branch ! master|dev"
+            exit
+        fi
+    fi
+done
+
+BASE="/home/build/workspace"
+BUILDBASE="$BASE/$NIKOLA/$newrev"
+TARGET="$BASE/$SITE"
+OUTPUT="$BUILDBASE/output"
+CONTENT="$BUILDBASE/content"
+FILETYPES="ico js css less sass html htm txt xml svg pdf vcf ics asc sig"
+PATTERN=".*\.("`echo "$FILETYPES" | tr ' ' '|'`")$"
+
+mkdir $BUILDBASE
+mkdir $CONTENT
+
+git --work-tree=$BUILDBASE --git-dir=$BASE/c3w.at.git checkout $BRANCH -f
+git --work-tree=$CONTENT --git-dir=$BASE/c3w.at-pages.git checkout $BRANCH -f
+
+cd $BUILDBASE
+
+/home/build/.local/bin/nikola build
+
+if [ $? -eq 0 ]; 
+then
+    echo "**************************************************"
+    echo "nikola build done"
+    echo "**************************************************"
+    cd $OUTPUT
+    find -E ./ -type f -iregex ${PATTERN} | \
+        while read FILENAME ; do
+            echo "gzip -k9f ${FILENAME}"
+            gzip -k9f ${FILENAME}
+
+	    if [ $? -eq 0 ];
+	    then
+		echo "success"
+	    else
+		echo ":("
+	    fi
+
+            echo "brotli -kf -S .br ${FILENAME}"
+            brotli -kf -S .br ${FILENAME}
+
+	    if [ $? -eq 0 ];
+	    then
+		echo "success"
+	    else
+		echo ":("
+	    fi
+    done
+
+    if [ $? -eq 0 ]; 
+    then
+        echo "**************************************************"
+	echo "gzip + brotli magic done"
+    	echo "**************************************************"
+        rsync -a --delete-after $OUTPUT/ $TARGET/
+        echo "**************************************************"
+        echo "deployed c3w.at-$BRANCH"
+    	echo "**************************************************"
+
+        if [ "master" == "$BRANCH" ];
+        then
+	    git --work-tree=$BUILDBASE --git-dir=$BASE/c3w.at.git push origin master
+
+	    if [ $? -eq 0 ];
+	    then
+        	rm -rf $BUILDBASE
+    		echo "**************************************************"
+            	echo "github.com sync done"
+    		echo "**************************************************"
+	    else
+        	rm -rf $BUILDBASE
+    		echo "**************************************************"
+            	echo "github.com sync failed"
+    		echo "**************************************************"
+	    fi
+        fi
+    else
+        rm -rf $BUILDBASE
+    	echo "**************************************************"
+        echo "gzip + brotli magic failed"
+    	echo "**************************************************"
+    fi
+
+else
+    rm -rf $BUILDBASE
+    echo "**************************************************"
+    echo "Nikola build failed.."
+    echo "**************************************************"
+fi
